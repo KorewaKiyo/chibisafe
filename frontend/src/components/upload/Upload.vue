@@ -125,6 +125,11 @@ onMounted(() => {
 				const error = message as ApiError;
 				uploadsStore.setError(file.upload.uuid, error.message);
 				console.log(file, message);
+			},
+			sending: (file, xhr, formData) => {
+				// TODO: Intended for debugging, perhaps remove if no longer needed
+				if (!file?.upload) return;
+				xhr.setRequestHeader('debug-dz-uuid', file.upload.uuid);
 			}
 		});
 

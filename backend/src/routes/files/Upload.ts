@@ -92,7 +92,9 @@ const uploadFile = async (req: RequestWithOptionalUser, res: Response) => {
 	const body: { [index: string]: string } = {};
 	const files: FileInProgress[] = [];
 
-	log.debug(`await req.multipart()`);
+	// TODO: debug uuid
+	const _uuid = req.headers['debug-dz-uuid'] || 'N/A';
+	log.debug(`${_uuid}: await req.multipart()`);
 	await req.multipart(busboyOptions, async (field: MultipartField) => {
 		/*
 			Keep non-files fields in body.
@@ -196,13 +198,13 @@ const uploadFile = async (req: RequestWithOptionalUser, res: Response) => {
 			if (file.chunksData) {
 				// We listen for readStream's close event
 				readStream.once('close', () => {
-					log.debug(`${_index}: readStream -> close`);
+					log.debug(`${_uuid}: #${_index}: readStream -> close`);
 					resolve();
 				});
 			} else {
 				// We immediately listen for writeStream's finish event
 				writeStream.once('finish', () => {
-					log.debug(`${_index}: writeStream -> finish`);
+					log.debug(`${_uuid}: #${_index}: writeStream -> finish`);
 					if (writeStream?.bytesWritten !== undefined) {
 						file.size = writeStream.bytesWritten;
 					}
@@ -219,12 +221,12 @@ const uploadFile = async (req: RequestWithOptionalUser, res: Response) => {
 
 			// Pipe readStream to writeStream
 			// Do not end writeStream when readStream finishes if it's a chunk upload
-			log.debug(`${_index}: readStream.pipe(writeStream, { end: ${inspect(!file.chunksData)} })`);
+			log.debug(`${_uuid}: #${_index}: readStream.pipe(writeStream, { end: ${inspect(!file.chunksData)} })`);
 			readStream.pipe(writeStream, { end: !file.chunksData });
 
 			// This is not supposed to be necessary,
 			// but somehow the only way to get Hyper +6.4.4 to work here
-			log.debug(`req.resume()`);
+			log.debug(`${_uuid}: #${_index}: req.resume()`);
 			// @ts-ignore
 			req.resume();
 		})
@@ -250,9 +252,9 @@ const uploadFile = async (req: RequestWithOptionalUser, res: Response) => {
 			});
 	});
 
-	log.debug(`req.multipart() awaited`);
+	log.debug(`${_uuid}: req.multipart() awaited`);
 
-	log.debug(`files.length: ${files.length}`);
+	log.debug(`${_uuid}: files.length: ${files.length}`);
 	if (!files.length) {
 		return res.status(400).json({ message: 'No files.' });
 	}
@@ -284,12 +286,17 @@ const uploadFile = async (req: RequestWithOptionalUser, res: Response) => {
 		void cleanUpFiles(files);
 		unfreezeChunksData(files);
 
+		log.debug(`${_uuid}: errored: ${error instanceof Error ? error.message : 'Bad request.'}`);
 		return res.status(400).json({ message: error instanceof Error ? error.message : 'Bad request.' });
 	}
 
 	// If the uploaded file is a chunk, then just say that it was a success.
 	if (files.some(file => file.chunksData)) {
 		unfreezeChunksData(files, true);
+		for (const file of files) {
+			log.debug(`${file.chunksData?.uuid}: chunk #${file.chunksData?.chunks} ok`);
+		}
+
 		return res.json({ success: true });
 	}
 
@@ -321,6 +328,7 @@ const finishChunks = async (req: RequestWithOptionalUser, res: Response) => {
 	for (const file of body.files) {
 		file.uuid = `${req.ip}_${String(file.uuid)}`;
 		file.chunksData = chunksData.get(file.uuid);
+		log.debug(`${file.uuid}: finishing chunks`);
 	}
 
 	if (body.files.some(file => !file.chunksData || file.chunksData.processing)) {
@@ -415,6 +423,7 @@ const finishChunks = async (req: RequestWithOptionalUser, res: Response) => {
 					hash,
 					ip: req.ip
 				});
+				log.debug(`${file.uuid}: chunks finished`);
 			})
 		);
 
